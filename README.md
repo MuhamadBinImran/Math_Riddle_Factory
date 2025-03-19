@@ -1,4 +1,3 @@
-```md
 # 🧠 Math Riddle Generator
 
 This project fine-tunes a **GPT-2 model** to generate tricky and fun **math riddles**!  
@@ -30,7 +29,7 @@ math-riddle-generator/
 ## 🛠 Installation
 ### **1️⃣ Clone the Repository**
 ```bash
-git clone https://github.com/YOUR_USERNAME/math-riddle-generator.git
+git clone https://github.com/MuhamadBinImran/math-riddle-generator.git
 cd math-riddle-generator
 ```
 
