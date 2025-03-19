@@ -5,6 +5,9 @@ import streamlit as st
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArguments, DataCollatorForLanguageModeling
 from datasets import Dataset
 
+# ✅ Move set_page_config to the first line
+st.set_page_config(page_title="Math Riddle Generator", page_icon="🧠", layout="centered")
+
 # Set device
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -76,7 +79,6 @@ def generate_riddle():
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # Streamlit UI
-st.set_page_config(page_title="Math Riddle Generator", page_icon="🧠", layout="centered")
 st.title("Math Riddle Generator 🧠")
 
 if st.button("Fine-tune Model (Quick)"):
