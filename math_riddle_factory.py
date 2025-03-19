@@ -1,117 +1,66 @@
-# -*- coding: utf-8 -*-
-import os
-import pandas as pd
 import torch
 import streamlit as st
+import pandas as pd
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArguments, DataCollatorForLanguageModeling
-from datasets import Dataset, DatasetDict
+from datasets import Dataset
 
-# -------------------------------
-# 1️⃣ Load Dataset from CSV
-# -------------------------------
-df = pd.read_csv("riddles.csv")
-texts = [f"Riddle: {row['Riddle']}\nAnswer: {row['Answer']}" for _, row in df.iterrows()]
-dataset = Dataset.from_dict({"text": texts})
+# ✅ **Step 1: Load Riddles Dataset**
+@st.cache_data
+def load_dataset():
+    file_path = "riddles.csv"  # Path to the uploaded file
+    df = pd.read_csv(file_path)  # Load CSV
+    df = df.dropna()  # Remove empty rows if any
+    return df
 
-# Split into training and validation sets
-dataset = dataset.train_test_split(test_size=0.2)
+df = load_dataset()
+riddles = [{"riddle": row["riddle"], "answer": row["answer"]} for _, row in df.iterrows()]
 
-# -------------------------------
-# 2️⃣ Load Pre-trained GPT-2 Model
-# -------------------------------
+# ✅ **Step 2: Tokenizer & Model Setup**
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-tokenizer.pad_token = tokenizer.eos_token
-model = GPT2LMHeadModel.from_pretrained("gpt2")
+model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
+tokenizer.pad_token = tokenizer.eos_token  # Set padding token
 
-# Tokenize dataset
-def tokenize_function(examples):
-    return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128)
+# ✅ **Step 3: Convert Dataset for Training**
+dataset = Dataset.from_dict({"text": [f"Q: {r['riddle']} A: {r['answer']}" for r in riddles]})
+dataset = dataset.map(lambda x: {"input_ids": tokenizer(x["text"], truncation=True, padding="max_length", max_length=64)["input_ids"]})
 
-tokenized_datasets = dataset.map(tokenize_function, batched=True)
-
-# -------------------------------
-# 3️⃣ Fine-tune GPT-2 at Runtime
-# -------------------------------
+# ✅ **Step 4: Fine-Tuning GPT-2**
 training_args = TrainingArguments(
     output_dir="./results",
-    report_to="none",  # Disable Weights & Biases
-    evaluation_strategy="epoch",
-    learning_rate=5e-5,
+    num_train_epochs=3,
     per_device_train_batch_size=2,
-    num_train_epochs=2,  # Adjust for speed
-    weight_decay=0.01,
+    per_device_eval_batch_size=2,
+    save_steps=1000,
+    save_total_limit=2,
     logging_dir="./logs",
-    logging_steps=10,
+    no_cuda=not torch.cuda.is_available(),  # Force CPU mode if no GPU
 )
 
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["test"],
+    train_dataset=dataset,
+    eval_dataset=dataset,
+    tokenizer=tokenizer,
     data_collator=data_collator,
 )
 
 trainer.train()
 
-# -------------------------------
-# 4️⃣ Riddle Generation Function
-# -------------------------------
+# ✅ **Step 5: Riddle Generation Function**
 def generate_riddle():
-    input_text = "Generate a tricky math riddle: "
-    inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
-    
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_length=100,
-            num_return_sequences=1,
-            temperature=0.7,
-            top_p=0.9,
-            repetition_penalty=1.2,
-            pad_token_id=tokenizer.eos_token_id
-        )
+    input_text = "Q: "  # Prompt for riddle generation
+    input_ids = tokenizer.encode(input_text, return_tensors="pt").to(device)
+    output = model.generate(input_ids, max_length=50, num_return_sequences=1, do_sample=True, temperature=0.7)
+    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    return generated_text
 
-    riddle = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    riddle = riddle.split("\n")[0]  # Extract only the relevant part
-    return riddle
-
-# -------------------------------
-# 5️⃣ Streamlit UI for Deployment
-# -------------------------------
-st.set_page_config(page_title="Math Riddle Generator", page_icon="🧠", layout="centered")
-
-st.markdown(
-    """
-    <style>
-        .stButton button {
-            background-color: #4CAF50;
-            color: white;
-            font-size: 18px;
-            padding: 10px 24px;
-            border-radius: 8px;
-        }
-        .stTextArea textarea {
-            font-size: 16px;
-            background-color: #f0f0f0;
-            border-radius: 8px;
-        }
-        .title {
-            text-align: center;
-            font-size: 28px;
-            font-weight: bold;
-            color: #333;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown("<p class='title'>Math Riddle Generator 🧠</p>", unsafe_allow_html=True)
-st.write("Generate unique and fun math riddles with AI!")
+# ✅ **Step 6: Streamlit UI**
+st.set_page_config(page_title="Math Riddle Generator", layout="centered")
+st.title("🤖 Math Riddle Factory")
 
 if st.button("Generate Riddle"):
     riddle = generate_riddle()
-    st.text_area("Generated Riddle", riddle, height=150)
+    st.write(f"🧩 **Riddle:** {riddle}")
